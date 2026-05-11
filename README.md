@@ -1,6 +1,6 @@
-# Selective Domain Proxy
+# 域名定向代理
 
-只对指定域名的标签页走代理的 Chrome 浏览器扩展。
+只对指定域名走代理的 Chrome 浏览器扩展。
 
 ## 功能
 
@@ -45,6 +45,8 @@
 ### 域名匹配规则
 
 - 添加 `example.com` 会匹配 `example.com` 及所有子域名（`www.example.com`、`api.example.com` 等）
+- 支持 `*` 通配符，如 `*.claude.*` 可匹配 `claude.com`、`claude.ai`、`www.claude.com`、`api.claude.ai`
+- `*` 按域名段匹配，可匹配 0 个或多个域名段；同一段内也可作部分匹配，如 `claude.*`
 - 可以一次粘贴多个域名，用逗号、分号或空格分隔
 - 支持粘贴完整 URL，会自动提取域名（去掉协议和路径）
 

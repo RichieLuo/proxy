@@ -61,25 +61,144 @@ function setDirect() {
   });
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function splitDomain(value) {
+  return value.toLowerCase().split('.').filter(Boolean);
+}
+
+function isPatternLabelMatch(label, patternLabel) {
+  if (!patternLabel.includes('*')) {
+    return label === patternLabel;
+  }
+
+  const regex = new RegExp(
+    '^' + patternLabel.split('*').map(escapeRegExp).join('.*') + '$'
+  );
+  return regex.test(label);
+}
+
+function isWildcardDomainMatch(domain, pattern) {
+  const domainLabels = splitDomain(domain);
+  const patternLabels = splitDomain(pattern);
+  const memo = new Map();
+
+  function match(domainIndex, patternIndex) {
+    const key = `${domainIndex}:${patternIndex}`;
+    if (memo.has(key)) {
+      return memo.get(key);
+    }
+
+    let result;
+    if (patternIndex === patternLabels.length) {
+      result = domainIndex === domainLabels.length;
+    } else if (patternLabels[patternIndex] === '*') {
+      result = false;
+      for (let nextIndex = domainIndex; nextIndex <= domainLabels.length; nextIndex++) {
+        if (match(nextIndex, patternIndex + 1)) {
+          result = true;
+          break;
+        }
+      }
+    } else {
+      result =
+        domainIndex < domainLabels.length &&
+        isPatternLabelMatch(domainLabels[domainIndex], patternLabels[patternIndex]) &&
+        match(domainIndex + 1, patternIndex + 1);
+    }
+
+    memo.set(key, result);
+    return result;
+  }
+
+  return match(0, 0);
+}
+
+function isDomainPatternMatch(domain, pattern) {
+  const normalizedDomain = domain.toLowerCase();
+  const normalizedPattern = pattern.toLowerCase();
+
+  if (!normalizedPattern.includes('*')) {
+    return normalizedDomain === normalizedPattern || normalizedDomain.endsWith('.' + normalizedPattern);
+  }
+
+  return isWildcardDomainMatch(normalizedDomain, normalizedPattern);
+}
+
 function applyPAC() {
   const scheme = PROXY_SCHEME[settings.proxy.protocol] || 'PROXY';
   const proxyLine = `${scheme} ${settings.proxy.host}:${settings.proxy.port}`;
   const whitelistJson = JSON.stringify(settings.whitelist);
 
-  const pac = `
-function FindProxyForURL(url, host) {
-  var domains = ${whitelistJson};
-  if (domains.length === 0) return 'DIRECT';
-  for (var i = 0; i < domains.length; i++) {
-    var d = domains[i];
-    if (d.indexOf('*') !== -1) {
-      if (shExpMatch(host, d)) return '${proxyLine}';
-    } else {
-      if (host === d || dnsDomainIs(host, d)) return '${proxyLine}';
-    }
-  }
-  return 'DIRECT';
-}`;
+  const pac = [
+    'function escapeRegExp(value) {',
+    "  return value.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');",
+    '}',
+    'function splitDomain(value) {',
+    "  var parts = value.toLowerCase().split('.');",
+    '  var result = [];',
+    '  for (var i = 0; i < parts.length; i++) {',
+    '    if (parts[i]) result.push(parts[i]);',
+    '  }',
+    '  return result;',
+    '}',
+    'function isPatternLabelMatch(label, patternLabel) {',
+    "  if (patternLabel.indexOf('*') === -1) return label === patternLabel;",
+    "  var pieces = patternLabel.split('*');",
+    "  var source = '^';",
+    '  for (var i = 0; i < pieces.length; i++) {',
+    "    if (i > 0) source += '.*';",
+    '    source += escapeRegExp(pieces[i]);',
+    '  }',
+    "  source += '$';",
+    '  return new RegExp(source).test(label);',
+    '}',
+    'function isWildcardDomainMatch(host, pattern) {',
+    '  var domainLabels = splitDomain(host);',
+    '  var patternLabels = splitDomain(pattern);',
+    '  var memo = {};',
+    '  function match(domainIndex, patternIndex) {',
+    "    var key = domainIndex + ':' + patternIndex;",
+    '    if (Object.prototype.hasOwnProperty.call(memo, key)) return memo[key];',
+    '    var result;',
+    '    if (patternIndex === patternLabels.length) {',
+    '      result = domainIndex === domainLabels.length;',
+    "    } else if (patternLabels[patternIndex] === '*') {",
+    '      result = false;',
+    '      for (var nextIndex = domainIndex; nextIndex <= domainLabels.length; nextIndex++) {',
+    '        if (match(nextIndex, patternIndex + 1)) {',
+    '          result = true;',
+    '          break;',
+    '        }',
+    '      }',
+    '    } else {',
+    '      result = domainIndex < domainLabels.length &&',
+    '        isPatternLabelMatch(domainLabels[domainIndex], patternLabels[patternIndex]) &&',
+    '        match(domainIndex + 1, patternIndex + 1);',
+    '    }',
+    '    memo[key] = result;',
+    '    return result;',
+    '  }',
+    '  return match(0, 0);',
+    '}',
+    'function isDomainPatternMatch(host, pattern) {',
+    '  host = host.toLowerCase();',
+    '  pattern = pattern.toLowerCase();',
+    "  if (pattern.indexOf('*') === -1) return host === pattern || dnsDomainIs(host, '.' + pattern);",
+    '  return isWildcardDomainMatch(host, pattern);',
+    '}',
+    'function FindProxyForURL(url, host) {',
+    `  var domains = ${whitelistJson};`,
+    "  if (domains.length === 0) return 'DIRECT';",
+    '  host = host.toLowerCase();',
+    '  for (var i = 0; i < domains.length; i++) {',
+    `    if (isDomainPatternMatch(host, domains[i])) return '${proxyLine}';`,
+    '  }',
+    "  return 'DIRECT';",
+    '}'
+  ].join('\n');
 
   chrome.proxy.settings.set({
     value: {
@@ -93,15 +212,7 @@ function FindProxyForURL(url, host) {
 }
 
 function isDomainMatch(domain) {
-  domain = domain.toLowerCase();
-  return settings.whitelist.some(d => {
-    d = d.toLowerCase();
-    if (d.includes('*')) {
-      var regex = new RegExp('^' + d.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
-      return regex.test(domain);
-    }
-    return domain === d || domain.endsWith('.' + d);
-  });
+  return settings.whitelist.some(pattern => isDomainPatternMatch(domain, pattern));
 }
 
 async function checkActiveTab() {

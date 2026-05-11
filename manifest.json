@@ -1,15 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "Selective Domain Proxy",
+  "name": "域名定向代理",
   "version": "1.0.0",
-  "description": "只对匹配白名单域名的标签页走代理 - Proxy only tabs whose URL domain matches the whitelist",
+  "description": "只对匹配域名走代理的 Chrome 扩展",
   "permissions": ["proxy", "storage", "tabs"],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Selective Domain Proxy"
+    "default_title": "域名定向代理"
   },
   "icons": {
     "16": "icons/icon16.png",
