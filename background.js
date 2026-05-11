@@ -72,8 +72,10 @@ function FindProxyForURL(url, host) {
   if (domains.length === 0) return 'DIRECT';
   for (var i = 0; i < domains.length; i++) {
     var d = domains[i];
-    if (host === d || dnsDomainIs(host, d)) {
-      return '${proxyLine}';
+    if (d.indexOf('*') !== -1) {
+      if (shExpMatch(host, d)) return '${proxyLine}';
+    } else {
+      if (host === d || dnsDomainIs(host, d)) return '${proxyLine}';
     }
   }
   return 'DIRECT';
@@ -94,6 +96,10 @@ function isDomainMatch(domain) {
   domain = domain.toLowerCase();
   return settings.whitelist.some(d => {
     d = d.toLowerCase();
+    if (d.includes('*')) {
+      var regex = new RegExp('^' + d.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
+      return regex.test(domain);
+    }
     return domain === d || domain.endsWith('.' + d);
   });
 }

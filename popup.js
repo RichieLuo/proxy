@@ -148,6 +148,31 @@ el.addBtn.addEventListener('click', addDomain);
 el.newDomain.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') addDomain();
 });
+
+async function addCurrentDomain() {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tabs.length === 0 || !tabs[0].url) return;
+    let hostname;
+    try {
+      hostname = new URL(tabs[0].url).hostname;
+    } catch (e) {
+      return;
+    }
+    if (!hostname || settings.whitelist.includes(hostname)) {
+      el.newDomain.value = hostname;
+      el.newDomain.select();
+      return;
+    }
+    settings.whitelist.push(hostname);
+    renderDomainList();
+    updateStatus();
+  } catch (e) {
+    console.error('addCurrentDomain error:', e);
+  }
+}
+
+$('addCurrentBtn').addEventListener('click', addCurrentDomain);
 el.saveBtn.addEventListener('click', saveSettings);
 el.resetBtn.addEventListener('click', resetDefaults);
 
